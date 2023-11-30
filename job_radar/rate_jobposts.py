@@ -10,7 +10,7 @@ from deep_translator import GoogleTranslator
 import datefinder
 from nltk.tokenize import sent_tokenize
 #from store_jobposts import connect_to_google_sheet, get_worksheet_as_dataframe, update_google_worksheet
-from store_jobposts import JobStorageManager
+from manage_jobposts import JobStorageManager
 from config.score_markers import score_markers
 from log_helpers import log_big_separator, log_small_separator
 

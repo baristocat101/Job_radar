@@ -10,7 +10,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import ElementNotInteractableException, NoSuchElementException, WebDriverException
 from config.scraping_paths import JOBATTRUBUTE_HTML_TAG_CLASS_LIST, PATHS_POPUP_BUTTONS
 from search_criteria import title_filtering, attribute_filtering, SEARCH_KEYWORDS
-from store_jobposts import JobStorageManager
+from manage_jobposts import JobStorageManager
 from helper_classes import BrowserManager, ElementFinder
 from config.datastructure import DATACOLOUMNS
 from log_helpers import log_big_separator, log_small_separator

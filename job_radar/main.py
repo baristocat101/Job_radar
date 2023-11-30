@@ -1,8 +1,8 @@
 from datetime import datetime
 import logging
-from linkedin_job_scraping import scrape_and_store_new_jobposts
-from store_jobposts import JobStorageManager, JobPostOrganizer
-from job_rating import rate_all_jobpost, check_for_cool_jobs
+from scrape_jobposts import scrape_and_store_new_jobposts
+from manage_jobposts import JobStorageManager, JobPostOrganizer
+from rate_jobposts import rate_all_jobpost, check_for_cool_jobs
 from send_mail import send_mail_with_notification
 from log_helpers import setup_log_file
 
