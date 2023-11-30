@@ -17,3 +17,4 @@ GoLogin/*
 .vscode/*
 logs/*
 *.pyc
+.venv/*
