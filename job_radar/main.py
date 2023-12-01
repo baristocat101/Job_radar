@@ -16,7 +16,7 @@ def main():
 	# Scrape and store new, relevant job posts
 	############################################################################
 
-	scrape_and_store_new_jobposts()
+	#scrape_and_store_new_jobposts()
 
 	############################################################################
 	# Archiving inactive jobposts and reorganize remaining jobposts

@@ -10,8 +10,8 @@ from config.tokens import gologin_tokens
 ############################################################################
 
 '''
-Gologin provider browser profiles that utilize proxies and unique fingerprints
-which make the browser untrackable.
+Gologin provides browser profiles that utilize proxies and unique 
+fingerprints to hide the underlying browser instance.
 '''
 
 def _provide_gl_browser_profile():

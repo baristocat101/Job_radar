@@ -37,18 +37,18 @@ class ElementFinder:
     def __init__(self, driver: WebElement):
         self.driver = driver
 
-    @try_except_decorator
+    #@try_except_decorator
     def find_by_xpath(self, xpath):
        return self.driver.find_element(By.XPATH, xpath)
     
-    @try_except_decorator
+    #@try_except_decorator
     def find_list_by_xpath(self, xpath):
         return self.driver.find_elements(By.XPATH, xpath)
 
-    @try_except_decorator
+    #@try_except_decorator
     def find_by_class(self, class_):
         return self.driver.find_element(By.CLASS_NAME, class_)
 
-    @try_except_decorator
+    #@try_except_decorator
     def find_list_by_class(self, class_):
         return self.driver.find_elements(By.CLASS_NAME, class_)
