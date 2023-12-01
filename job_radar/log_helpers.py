@@ -19,7 +19,7 @@ def setup_log_file():
 	logger = logging.getLogger()
 	logger.addHandler(handler)
 	logger.setLevel(logging.INFO)
-
+	
 
 def log_big_separator(logger, message):
     """Log a separator line."""
