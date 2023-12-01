@@ -22,14 +22,11 @@ def setup_log_file():
 	
 
 def log_big_separator(logger, message):
-    """Log a separator line."""
     logger.info("\n----------------------")
     logger.info(message)
     logger.info("----------------------\n")
 
 def log_small_separator(logger, message):
-    """Log a separator line."""
-
     logger.info("\n----------------------")
     logger.info(message+"\n")
     
