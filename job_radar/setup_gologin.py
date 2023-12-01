@@ -8,10 +8,10 @@ from config.tokens import gologin_tokens
 ############################################################################
 # Start GoLogin-profile browser and setup remote control
 ############################################################################
-
 '''
-Gologin provider browser profiles that utilize proxies and unique fingerprints
-which make the browser untrackable.
+Gologin provides browser profiles that utilize proxies and unique 
+fingerprints to hide the underlying browser instance. The browser profile is 
+remote controlled using selenium and chromedriver.
 '''
 
 def _provide_gl_browser_profile():
