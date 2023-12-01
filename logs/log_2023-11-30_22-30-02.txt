@@ -1,6 +1,0 @@
-Job radar started: 2023-11-30_22-30-02
-
-----------------------
-SEARCH 'N' SCRAPE LOOP STARTED
-----------------------
-
