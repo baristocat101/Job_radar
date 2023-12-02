@@ -16,19 +16,19 @@ def main():
 	# Scrape and store new, relevant job posts
 	############################################################################
 
-	""" scrape_and_store_new_jobposts() """
+	scrape_and_store_new_jobposts()
 
 	############################################################################
 	# Archiving inactive jobposts and reorganize remaining jobposts
 	############################################################################
 
-	"""
+	
 	job_storage_manager = JobStorageManager(spreadsheet_name="Job_radar_aktiv")
 	job_storage_manager.find_inactive_jobposts()
 	job_storage_manager.archive_inactive_jobposts()
 
 	JobPostOrganizer(spreadsheet_name="Job_radar_aktiv").reorganize_jobposts()
-    """
+   
 	############################################################################
 	# Analyze and rate stored job posts
 	############################################################################
@@ -39,9 +39,9 @@ def main():
 	# Notify by email if cool jobs appears
 	############################################################################
 
-	""" cool_job_list = check_for_cool_jobs(cool_score=50)
+	cool_job_list = check_for_cool_jobs(cool_score=50)
 	if cool_job_list:
-		send_mail_with_notification(cool_job_list) """
+		send_mail_with_notification(cool_job_list)
 	
 	logging.info("Job radar end")
 
