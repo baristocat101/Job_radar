@@ -261,6 +261,8 @@ def rate_all_jobpost():
         if inactive_jobs_found:
             job_storage_manager.archive_inactive_jobposts()
     
+    job_storage_manager.google_sheet_manager.sheet.worksheets()[0].update('B1', str(datetime.now()))
+
     completion_time = start_time - time.time()
     log_small_separator(logger, 
                       f"All job posts rated - completion time {completion_time}")
@@ -274,6 +276,6 @@ def check_for_cool_jobs(cool_score: int) -> List[str]:
     cool_job_list = []
     for worksheet in job_storage_manager.google_sheet_manager.sheet.worksheets()[1:]:
         df = job_storage_manager.google_sheet_manager.get_worksheet_as_dataframe(worksheet)
-        cool_job_list.extend([row['jobpost_title'] for _, row in df.iterrows() if row['score'] > cool_score])
+        cool_job_list.extend([(row['id'], row['jobpost_title']) for _, row in df.iterrows() if row['score'] > cool_score])
 
     return cool_job_list
