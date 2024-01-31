@@ -10,7 +10,9 @@ Thumbs.db
 # Ignore directories and files
 .env
 job_radar/config/*
-webdriver/*
+webdriver_18/*
+webdriver_19/*
+webdriver_20/*
 gologin_zeroprofile.zip
 search_criteria.py
 GoLogin/*
@@ -18,3 +20,6 @@ GoLogin/*
 logs/*
 *.pyc
 .venv/*
+scrape_jobposts_test.py
+scrape_jobposts_foreground.py
+screenshots/*
