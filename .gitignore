@@ -10,7 +10,6 @@ Thumbs.db
 # Ignore directories and files
 .env
 job_radar/config/*
-webdriver_18/*
 webdriver_19/*
 webdriver_20/*
 gologin_zeroprofile.zip
