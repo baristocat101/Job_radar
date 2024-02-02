@@ -1,0 +1,16 @@
+
+Date: 02-02-24 09:13
+Loading af full list til Python går galt efter 948 jobs
+	* ikke et problem i den følgende kørsel
+
+
+Date: 02-02-24 11:30
+Terminante old chrome process raised an error
+	* restart at PC virkede
+
+
+Date: 02-02-24 12:30
+Couldnt find listed element - ender i et uendeligt loop
+	* virkede ved næste kørsel
+	* sker når den tjekker for bunden - nu lukker der ned
+		

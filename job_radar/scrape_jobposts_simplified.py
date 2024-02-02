@@ -81,7 +81,7 @@ class PageLoader:
         def _retreive_number_of_search_results() -> int:
             xpath = """//*[@id="main-content"]/div/h1/span[1]"""
             num_results = ElementFinder(self.driver).find_by_xpath(xpath).text
-            if num_results == "1,000+":
+            if num_results in ["1,000+", "1.000"]:
                 num_results = 1000
             return int(num_results)
 
@@ -107,6 +107,7 @@ class PageLoader:
                     )
                 except Exception as e:
                     logger.error(f"{e}")
+                    sys.exit()
             if (
                 ele_txt == "You've viewed all jobs for this search"
                 or ele_txt == "Du har set alle jobbene for denne søgning"
@@ -151,8 +152,8 @@ class PageLoader:
 
             # get more results
             num_loaded_prev = num_loaded
+            attempt = 1
             while 1:
-                attempt = 1
                 try:
                     self.element_finder.find_by_xpath(
                         """//*[@id="main-content"]/section[2]/button"""
@@ -163,7 +164,7 @@ class PageLoader:
                         if _check_if_bottom_is_reached():
                             is_search_active = 0
                             break
-                        elif num_loaded >= 1000:
+                        elif num_loaded >= 950:
                             is_search_active = 0
                             break
                         else:
@@ -524,7 +525,7 @@ class ScrapeHandler:
                         """//*[@id="main-content"]/section[1]/div/section[2]/div/div[1]"""
                     )
                     jobpage_not_reached = 0
-                except:
+                except Exception:
                     time.sleep(3)
                     self.driver.back()
                     time.sleep(3)
@@ -539,10 +540,9 @@ class ScrapeHandler:
             )
 
         job_storage_manager = JobStorageManager(spreadsheet_name="Job_radar_aktiv")
-        logger.info("line 733")
+        time.sleep(90)
         job_storage_manager.store_new_jobposts(df_new_jobposts, search_idx + 1)
         # cooldown before making more request to google api
-        time.sleep(90)
 
 
 def scrape_and_store_new_jobposts():
@@ -563,6 +563,7 @@ def scrape_and_store_new_jobposts():
                     browser_manager.start_browser_session()
                 except Exception as e:
                     logger.error(f"An exception occurred 2: {e}")
+                    sys.exit()
             else:
                 # restart browser session after each search for better stability
                 browser_manager.restart_browser_session()

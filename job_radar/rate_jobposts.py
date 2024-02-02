@@ -1,6 +1,6 @@
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Union, Tuple
 import logging
 
@@ -67,8 +67,12 @@ def find_application_deadline(text: str) -> List[Union[datetime, str, None]]:
 
     def _find_closest_date(text: str) -> Union[None, datetime]:
         def _validate_date(date: datetime):
+            # assume that if found date is more than 3 months old, it is not the
+            # an application deadline
+
             is_date_valid = 1
-            if datetime.now() > date:
+            difference = datetime.now() - date
+            if difference > timedelta(days=90):
                 is_date_valid = 0
             return is_date_valid
 
@@ -141,6 +145,9 @@ def keyword_matching_scoring(row: pd.Series, current_domain) -> Tuple[int, str]:
                                 years_of_experience = 2
                         except Exception:
                             pass
+
+            if years_of_experience >= 10:
+                years_of_experience = 0
 
             return years_of_experience
 
@@ -219,6 +226,32 @@ def keyword_matching_scoring(row: pd.Series, current_domain) -> Tuple[int, str]:
     return total_score, scoreboard
 
 
+def evaluate_if_active(deadline_date, df, row_idx):
+    job_inactive = False
+
+    # Retrieve the number of years of experience - if 2 or more -> inactive
+    pattern = r"num_years_exp: (\d+)"
+    match = re.search(pattern, df.loc[row_idx, "score_details"])
+    if match:
+        num_year_exp = int(match.group(1))
+        if num_year_exp >= 2:
+            df.loc[row_idx, "is_active"] = 0
+            job_inactive = True
+
+    # If deadline is after current date,the job is marked as inactive
+    if is_valid_date_format(deadline_date):
+        if datetime.strptime(deadline_date, "%d-%m-%Y").date() < datetime.now().date():
+            df.loc[row_idx, "is_active"] = 0
+            job_inactive = True
+
+    # If num applicants +110 -> inactive
+    if df.loc[row_idx, "num_applicants"] > 110:
+        df.loc[row_idx, "is_active"] = 0
+        job_inactive = True
+
+    return df, job_inactive
+
+
 def rate_all_jobpost():
     log_big_separator(logger, "RATING JOBPOSTS")
     start_time = time.time()
@@ -253,14 +286,10 @@ def rate_all_jobpost():
                     description
                 )
 
-            # finding application deadline. If deadline is after current date,
-            # the job is marked as inactive
+            # finding application deadline
             deadline_date = find_application_deadline(description)
-            if is_valid_date_format(deadline_date):
-                if datetime.strptime(deadline_date, "%d-%m-%Y") < datetime.now():
-                    df.loc[row_idx, "is_active"] = 0
-                    inactive_jobs_found = True
             df.loc[row_idx, "deadline"] = deadline_date
+
             current_domain = worksheet.title
 
             # rating based on simple keyword matching
@@ -268,13 +297,18 @@ def rate_all_jobpost():
             df.loc[row_idx, "score"] = total_score
             df.loc[row_idx, "score_details"] = scoreboard
 
+            # Evalulate if jobpost should be marked inactive
+            df, job_inactive = evaluate_if_active(deadline_date, df, row_idx)
+            if job_inactive:
+                inactive_jobs_found = True
+
         logger.info("Updating worksheet job posts with ratings")
         df = df.sort_values(by="score", ascending=False)
         job_storage_manager.google_sheet_manager.update_google_worksheet(worksheet, df)
         if inactive_jobs_found:
             job_storage_manager.archive_inactive_jobposts()
 
-        time.sleep(60)
+        time.sleep(90)
 
     job_storage_manager.google_sheet_manager.sheet.worksheets()[0].update(
         "B1", str(datetime.now())

@@ -41,7 +41,11 @@ class GoogleSheetManager:
         self, ws: gspread.worksheet.Worksheet, df: pd.DataFrame
     ):
         ws.clear()
-        set_with_dataframe(ws, df)
+        try:
+            set_with_dataframe(ws, df)
+            logger.info("Worksheet updated")
+        except Exception as e:
+            logger.error(f"Error: {e}")
 
 
 class JobStorageManager:
@@ -84,48 +88,43 @@ class JobStorageManager:
             return is_jobpost_inactive
 
         # verifies that href is still active - if not, the job is marked as inactive
-        # also marked inactive if the application deadline have expired
         for ws_idx, ws in enumerate(self.google_sheet_manager.sheet.worksheets()[1:]):
-            continue_loop = True
-            while continue_loop:
-                time.sleep(1)
+            if ws_idx == 0:
+                self.browser_manager.start_browser_session()
+            else:
+                # restart browser session between each worksheet for better stability
+                self.browser_manager.restart_browser_session()
 
-                if ws_idx == 0:
-                    self.browser_manager.start_browser_session()
-                else:
-                    # restart browser session between each worksheet for better stability
-                    self.browser_manager.restart_browser_session()
+            df = self.google_sheet_manager.get_worksheet_as_dataframe(ws)
 
-                df = self.google_sheet_manager.get_worksheet_as_dataframe(ws)
-                if len(df) == 0:  # break if no jobpost are present
-                    log_small_separator(logger, "Domain completed")
-                    break
-                for row_idx, row in df.iterrows():
+            for row_idx, row in df.iterrows():
+                # go to extended jobpage
+                jobpage_not_reached = 1
+                while jobpage_not_reached:
+                    self.browser_manager.driver.get(row["href"])
                     try:
-                        self.browser_manager.driver.get(row["href"])
-                        _ensure_authorization_wall_not_encountered(
-                            self.browser_manager.driver, row["href"]
+                        ElementFinder(self.browser_manager.driver).find_by_xpath(
+                            """//*[@id="main-content"]/section[1]/div/section[2]/div/div[1]"""
                         )
+                        jobpage_not_reached = 0
                         if _is_jobpost_inactive(self.browser_manager.driver):
                             df["is_active"].iloc[row_idx] = 0
                             logger.info("Job inactive")
+
                     except Exception:
-                        # test whether browser session is open
-                        try:
-                            # if open the jobpost is marked as inactive
-                            self.browser_manager.driver.get("www.openai.com")
+                        page_html = self.browser_manager.driver.page_source
+                        if "Page not found" in page_html:
                             df["is_active"].iloc[row_idx] = 0
                             logger.info("Job inactive")
-                        except:
-                            continue_loop = False
-                            logger.error(
-                                "Exception occurred, restarting browser session"
-                            )
-                            break
-                    if (row_idx + 1) == len(df):
-                        continue_loop = False
-                        log_small_separator(logger, "Domain completed")
-                        break
+                        else:
+                            time.sleep(3)
+                            self.browser_manager.driver.back()
+                            time.sleep(3)
+                            continue
+
+            log_small_separator(logger, "Domain completed")
+
+            time.sleep(90)
             self.google_sheet_manager.update_google_worksheet(ws, df)
         self.browser_manager.stop_browser_session()
         completion_time = start_time - time.time()
@@ -156,6 +155,7 @@ class JobStorageManager:
                     ws_ina
                 )
             )
+
             archived_id_list = df_archive["id"].tolist()
             df_inactive = df_active[
                 (df_active["is_active"] == 0) | df_active["id"].isin(archived_id_list)
@@ -163,8 +163,9 @@ class JobStorageManager:
 
             # update the archive
             df_archive_updated = job_handler_archive.update_existing_dataframe(
-                df_archive, df_inactive
+                df_archive, df_inactive, is_archiving=True
             )
+
             job_handler_archive.google_sheet_manager.update_google_worksheet(
                 ws_ina, df_archive_updated
             )
@@ -172,6 +173,8 @@ class JobStorageManager:
             # delete archived rows from the active worksheet
             updated_archived_id_list = df_archive_updated["id"].tolist()
             df_active = df_active[~df_active["id"].isin(updated_archived_id_list)]
+
+            time.sleep(90)
             self.google_sheet_manager.update_google_worksheet(ws_a, df_active)
         completion_time = start_time - time.time()
         log_small_separator(
@@ -179,10 +182,16 @@ class JobStorageManager:
         )
 
     def update_existing_dataframe(
-        self, df_old: pd.DataFrame, df_new: pd.DataFrame
+        self, df_old: pd.DataFrame, df_new: pd.DataFrame, is_archiving=False
     ) -> pd.DataFrame:
+
+        logger.info(f"Rows: df_new: {df_new.shape[0]} - df_old: {df_old.shape[0]}")
+
         if df_new.empty or df_old.empty:
-            df_updated = df_new
+            if is_archiving:
+                df_updated = df_new if not df_new.empty else df_old
+            else:
+                df_updated = df_new
         else:
             df_new["id"] = df_new["id"].astype("Int64")
             df_old["id"] = df_old["id"].astype("Int64")
@@ -192,6 +201,8 @@ class JobStorageManager:
             df_old.set_index("id", inplace=True)
             df_updated = df_old.combine_first(df_new)
             df_updated = df_updated.reset_index()
+
+        logger.info(f"Rows: df_updated: {df_updated.shape[0]}")
 
         return df_updated
 
@@ -205,6 +216,7 @@ class JobStorageManager:
         if df_existing.shape[0] > 0:
             df_updated = self.update_existing_dataframe(df_existing, df_new)
         else:
+            logger.info(f"Rows: df_new: {df_new.shape[0]}")
             df_updated = df_new
 
         self.google_sheet_manager.update_google_worksheet(worksheet, df_updated)
@@ -222,25 +234,48 @@ class JobPostOrganizer:
     ) -> pd.DataFrame:
         # find out if any job post belong to another dataframe
         df_destination = [
-            0
-            if (any(keyword in title for keyword in DOMAIN_MARKERS[0][0]))
-            else 1
-            if any(keyword in title for keyword in DOMAIN_MARKERS[1][0])
-            else 2
-            if (
-                any(keyword in title for keyword in DOMAIN_MARKERS[2][0])
-                and any(keyword not in title for keyword in DOMAIN_MARKERS[2][1])
+            (
+                0
+                if (any(keyword in title for keyword in DOMAIN_MARKERS[0][0]))
+                else (
+                    1
+                    if any(keyword in title for keyword in DOMAIN_MARKERS[1][0])
+                    else (
+                        2
+                        if (
+                            any(keyword in title for keyword in DOMAIN_MARKERS[2][0])
+                            and any(
+                                keyword not in title for keyword in DOMAIN_MARKERS[2][1]
+                            )
+                        )
+                        else (
+                            3
+                            if any(keyword in title for keyword in DOMAIN_MARKERS[3][0])
+                            else (
+                                4
+                                if (
+                                    any(
+                                        keyword in title
+                                        for keyword in DOMAIN_MARKERS[4][0]
+                                    )
+                                    and any(
+                                        keyword not in title
+                                        for keyword in DOMAIN_MARKERS[4][1]
+                                    )
+                                )
+                                else (
+                                    5
+                                    if any(
+                                        keyword in title
+                                        for keyword in DOMAIN_MARKERS[5][0]
+                                    )
+                                    else df_source_idx
+                                )
+                            )
+                        )
+                    )
+                )
             )
-            else 3
-            if any(keyword in title for keyword in DOMAIN_MARKERS[3][0])
-            else 4
-            if (
-                any(keyword in title for keyword in DOMAIN_MARKERS[4][0])
-                and any(keyword not in title for keyword in DOMAIN_MARKERS[4][1])
-            )
-            else 5
-            if any(keyword in title for keyword in DOMAIN_MARKERS[5][0])
-            else df_source_idx
             for title in df_source["jobpost_title"]
         ]
         return df_destination
