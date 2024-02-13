@@ -177,7 +177,7 @@ def keyword_matching_scoring(row: pd.Series, current_domain) -> Tuple[int, str]:
     def calc_industry_score(industry: str):
         industry_score = 0
         if industry in score_markers[4].keys():
-            industry_score += score_markers[4][industry]
+            industry_score += 2 * score_markers[4][industry]
         return {"score": industry_score, "score_log": f"{industry}"}
 
     def calc_jobfunction_score(jobfunction: str):
@@ -226,26 +226,33 @@ def keyword_matching_scoring(row: pd.Series, current_domain) -> Tuple[int, str]:
     return total_score, scoreboard
 
 
-def evaluate_if_active(deadline_date, df, row_idx):
+def evaluate_if_active(deadline_date, industry_score_markers, df, row_idx):
     job_inactive = False
+
+    # industries to always include
+    industries = list(industry_score_markers.keys())
+    industry_keepers = [industries[i] for i in [1, 2, 3, 13, 29, 30, 31]]
 
     # Retrieve the number of years of experience - if 2 or more -> inactive
     pattern = r"num_years_exp: (\d+)"
     match = re.search(pattern, df.loc[row_idx, "score_details"])
-    if match:
-        num_year_exp = int(match.group(1))
-        if num_year_exp >= 2:
-            df.loc[row_idx, "is_active"] = 0
-            job_inactive = True
+    if (
+        match
+        and int(match.group(1)) >= 3
+        and df.loc[row_idx, "Industries"] not in industry_keepers
+    ):
+        df.loc[row_idx, "is_active"] = 0
+        job_inactive = True
 
-    # If deadline is after current date,the job is marked as inactive
-    if is_valid_date_format(deadline_date):
-        if datetime.strptime(deadline_date, "%d-%m-%Y").date() < datetime.now().date():
-            df.loc[row_idx, "is_active"] = 0
-            job_inactive = True
-
-    # If num applicants +110 -> inactive
-    if df.loc[row_idx, "num_applicants"] > 110:
+    # If deadline is after the current date or num applicants +110 -> inactive
+    if (
+        is_valid_date_format(deadline_date)
+        and (
+            datetime.strptime(deadline_date, "%d-%m-%Y").date() < datetime.now().date()
+            or df.loc[row_idx, "num_applicants"] > 110
+        )
+        and df.loc[row_idx, "Industries"] not in industry_keepers
+    ):
         df.loc[row_idx, "is_active"] = 0
         job_inactive = True
 
@@ -258,7 +265,9 @@ def rate_all_jobpost():
 
     job_storage_manager = JobStorageManager(spreadsheet_name="Job_radar_aktiv")
 
-    for worksheet in job_storage_manager.google_sheet_manager.sheet.worksheets()[1:]:
+    for ws_idx, worksheet in enumerate(
+        job_storage_manager.google_sheet_manager.sheet.worksheets()[1:]
+    ):
         df = job_storage_manager.google_sheet_manager.get_worksheet_as_dataframe(
             worksheet
         )
@@ -281,10 +290,12 @@ def rate_all_jobpost():
                     for x in chunks
                 ]
                 description = " ".join(chunks_translated)
+                logger.info("Language translated")
             elif language != "en":
                 description = GoogleTranslator(source=language, target="en").translate(
                     description
                 )
+                logger.info("Language translated")
 
             # finding application deadline
             deadline_date = find_application_deadline(description)
@@ -298,7 +309,9 @@ def rate_all_jobpost():
             df.loc[row_idx, "score_details"] = scoreboard
 
             # Evalulate if jobpost should be marked inactive
-            df, job_inactive = evaluate_if_active(deadline_date, df, row_idx)
+            df, job_inactive = evaluate_if_active(
+                deadline_date, score_markers[4], df, row_idx
+            )
             if job_inactive:
                 inactive_jobs_found = True
 
@@ -306,15 +319,13 @@ def rate_all_jobpost():
         df = df.sort_values(by="score", ascending=False)
         job_storage_manager.google_sheet_manager.update_google_worksheet(worksheet, df)
         if inactive_jobs_found:
-            job_storage_manager.archive_inactive_jobposts()
-
-        time.sleep(90)
+            job_storage_manager.archive_inactive_jobposts(ws_idx)
 
     job_storage_manager.google_sheet_manager.sheet.worksheets()[0].update(
         "B1", str(datetime.now())
     )
 
-    completion_time = start_time - time.time()
+    completion_time = time.time() - start_time
     log_small_separator(
         logger, f"All job posts rated - completion time {completion_time}"
     )

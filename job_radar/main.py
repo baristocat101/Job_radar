@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 
-from scrape_jobposts_simplified import scrape_and_store_new_jobposts
+from scrape_jobposts import scrape_and_store_new_jobposts
 from manage_jobposts import JobStorageManager, JobPostOrganizer
 from rate_jobposts import rate_all_jobpost, check_for_cool_jobs
 from send_mail import send_mail_with_notification

@@ -41,11 +41,15 @@ class GoogleSheetManager:
         self, ws: gspread.worksheet.Worksheet, df: pd.DataFrame
     ):
         ws.clear()
-        try:
-            set_with_dataframe(ws, df)
-            logger.info("Worksheet updated")
-        except Exception as e:
-            logger.error(f"Error: {e}")
+        while 1:
+            try:
+                set_with_dataframe(ws, df)
+                log_small_separator(logger, "Worksheet updated")
+                return
+            except Exception:
+                logger.error("Too many request to api - timeout")
+                time.sleep(90)
+                continue
 
 
 class JobStorageManager:
@@ -53,20 +57,12 @@ class JobStorageManager:
     interactions."""
 
     def __init__(self, spreadsheet_name: str):
-        self.google_sheet_manager = GoogleSheetManager(spreadsheet_name)
+        self.gsheet_mgr = GoogleSheetManager(spreadsheet_name)
         self.browser_manager = BrowserManager()
 
     def find_inactive_jobposts(self):
         log_big_separator(logger, "FIND INACTIVE JOBPOSTS")
         start_time = time.time()
-
-        def _ensure_authorization_wall_not_encountered(driver: WebDriver, href: str):
-            try:
-                ElementFinder(driver).find_by_class("authwall-join-form__title")
-                driver.get(href)
-                _ensure_authorization_wall_not_encountered(driver, href)
-            except Exception:
-                return
 
         def _is_jobpost_inactive(driver: WebDriver) -> bool:
             is_jobpost_inactive = 0
@@ -88,20 +84,26 @@ class JobStorageManager:
             return is_jobpost_inactive
 
         # verifies that href is still active - if not, the job is marked as inactive
-        for ws_idx, ws in enumerate(self.google_sheet_manager.sheet.worksheets()[1:]):
+        for ws_idx, ws in enumerate(self.gsheet_mgr.sheet.worksheets()[1:]):
             if ws_idx == 0:
                 self.browser_manager.start_browser_session()
             else:
                 # restart browser session between each worksheet for better stability
                 self.browser_manager.restart_browser_session()
 
-            df = self.google_sheet_manager.get_worksheet_as_dataframe(ws)
+            df = self.gsheet_mgr.get_worksheet_as_dataframe(ws)
 
             for row_idx, row in df.iterrows():
                 # go to extended jobpage
+                logger.info(f"idx: {row_idx}")
+
                 jobpage_not_reached = 1
                 while jobpage_not_reached:
-                    self.browser_manager.driver.get(row["href"])
+                    try:
+                        self.browser_manager.driver.get(row["href"])
+                    except Exception:
+                        continue
+
                     try:
                         ElementFinder(self.browser_manager.driver).find_by_xpath(
                             """//*[@id="main-content"]/section[1]/div/section[2]/div/div[1]"""
@@ -121,40 +123,26 @@ class JobStorageManager:
                             self.browser_manager.driver.back()
                             time.sleep(3)
                             continue
+                time.sleep(5)
 
             log_small_separator(logger, "Domain completed")
 
-            time.sleep(90)
-            self.google_sheet_manager.update_google_worksheet(ws, df)
+            self.gsheet_mgr.update_google_worksheet(ws, df)
         self.browser_manager.stop_browser_session()
-        completion_time = start_time - time.time()
+        completion_time = time.time() - start_time
         log_small_separator(
             logger, f"Inactive check done - completion time {completion_time}"
         )
         return
 
-    def archive_inactive_jobposts(self):
-        log_big_separator(logger, "ARCHIVING INACTIVE JOBPOSTS")
-        start_time = time.time()
-
-        sheet_active = self.google_sheet_manager.sheet
-
-        # initialize new job post handler for archived job posts
-        job_handler_archive = JobStorageManager(spreadsheet_name="Job_radar_inaktiv")
-
-        # archive new, inactive jobposts
-        for ws_idx, ws_ina in enumerate(
-            job_handler_archive.google_sheet_manager.sheet.worksheets()[1:]
-        ):
+    def archive_inactive_jobposts(self, ws_idx=None):
+        def _update_archive_worksheet(ws_idx, ws_ina):
             ws_a = sheet_active.worksheets()[ws_idx + 1]
-            df_active = self.google_sheet_manager.get_worksheet_as_dataframe(ws_a)
+
+            df_active = self.gsheet_mgr.get_worksheet_as_dataframe(ws_a)
 
             # filter out row with IDs not present in new dataset and IDs of already archived files
-            df_archive = (
-                job_handler_archive.google_sheet_manager.get_worksheet_as_dataframe(
-                    ws_ina
-                )
-            )
+            df_archive = jh_archive.gsheet_mgr.get_worksheet_as_dataframe(ws_ina)
 
             archived_id_list = df_archive["id"].tolist()
             df_inactive = df_active[
@@ -162,36 +150,52 @@ class JobStorageManager:
             ]
 
             # update the archive
-            df_archive_updated = job_handler_archive.update_existing_dataframe(
-                df_archive, df_inactive, is_archiving=True
+            df_archive_updated = jh_archive.update_existing_dataframe(
+                df_archive,
+                df_inactive,
             )
 
-            job_handler_archive.google_sheet_manager.update_google_worksheet(
-                ws_ina, df_archive_updated
-            )
+            jh_archive.gsheet_mgr.update_google_worksheet(ws_ina, df_archive_updated)
 
             # delete archived rows from the active worksheet
             updated_archived_id_list = df_archive_updated["id"].tolist()
             df_active = df_active[~df_active["id"].isin(updated_archived_id_list)]
 
-            time.sleep(90)
-            self.google_sheet_manager.update_google_worksheet(ws_a, df_active)
-        completion_time = start_time - time.time()
+            self.gsheet_mgr.update_google_worksheet(ws_a, df_active)
+
+        log_big_separator(logger, "ARCHIVING INACTIVE JOBPOSTS")
+        start_time = time.time()
+
+        sheet_active = self.gsheet_mgr.sheet
+
+        # initialize new job post handler for archived job posts
+        jh_archive = JobStorageManager(spreadsheet_name="Job_radar_inaktiv")
+
+        # archive new, inactive jobposts
+        if ws_idx:
+            ws_ina = jh_archive.gsheet_mgr.sheet.worksheets()[ws_idx + 1]
+            _update_archive_worksheet(ws_idx, ws_ina)
+        else:
+            for ws_idx, ws_ina in enumerate(
+                jh_archive.gsheet_mgr.sheet.worksheets()[1:]
+            ):
+                _update_archive_worksheet(ws_idx, ws_ina)
+
+        completion_time = time.time() - start_time
         log_small_separator(
             logger, f"Archiving done - completion time {completion_time}"
         )
 
     def update_existing_dataframe(
-        self, df_old: pd.DataFrame, df_new: pd.DataFrame, is_archiving=False
+        self, df_old: pd.DataFrame, df_new: pd.DataFrame
     ) -> pd.DataFrame:
 
         logger.info(f"Rows: df_new: {df_new.shape[0]} - df_old: {df_old.shape[0]}")
 
+        # if either one of the dfs are empty, choose the one that is not empty
+        # else combine
         if df_new.empty or df_old.empty:
-            if is_archiving:
-                df_updated = df_new if not df_new.empty else df_old
-            else:
-                df_updated = df_new
+            df_updated = df_new if not df_new.empty else df_old
         else:
             df_new["id"] = df_new["id"].astype("Int64")
             df_old["id"] = df_old["id"].astype("Int64")
@@ -206,20 +210,30 @@ class JobStorageManager:
 
         return df_updated
 
+    def remove_jobs_already_archived(self, df_new, ws_idx):
+        ij_storage_mgr = JobStorageManager(spreadsheet_name="Job_radar_inaktiv")
+        ws_in = ij_storage_mgr.gsheet_mgr.sheet.worksheets()[ws_idx]
+        df_in = ij_storage_mgr.gsheet_mgr.get_worksheet_as_dataframe(ws_in)
+        inactive_id_list = df_in["id"].tolist()
+        df_new = df_new[~df_new["id"].isin(inactive_id_list)]
+        return df_new
+
     def store_new_jobposts(self, df_new: pd.DataFrame, ws_idx: int):
         log_small_separator(logger, f"Storing new jobposts - domain: {ws_idx}")
 
-        worksheet = self.google_sheet_manager.sheet.worksheets()[ws_idx]
+        ws = self.gsheet_mgr.sheet.worksheets()[ws_idx]
+
+        df_new = self.remove_jobs_already_archived(df_new, ws_idx)
 
         # loading existing jobposts and merge with new jobposts
-        df_existing = self.google_sheet_manager.get_worksheet_as_dataframe(worksheet)
+        df_existing = self.gsheet_mgr.get_worksheet_as_dataframe(ws)
         if df_existing.shape[0] > 0:
             df_updated = self.update_existing_dataframe(df_existing, df_new)
         else:
             logger.info(f"Rows: df_new: {df_new.shape[0]}")
             df_updated = df_new
 
-        self.google_sheet_manager.update_google_worksheet(worksheet, df_updated)
+        self.gsheet_mgr.update_google_worksheet(ws, df_updated)
         return
 
 
@@ -227,7 +241,7 @@ class JobPostOrganizer:
     """A class for organizing and reorganizing job posts within a Google Sheet."""
 
     def __init__(self, spreadsheet_name: str):
-        self.google_sheet_manager = GoogleSheetManager(spreadsheet_name)
+        self.gsheet_mgr = GoogleSheetManager(spreadsheet_name)
 
     def determine_df_destination_indices(
         self, df_source: pd.DataFrame, df_source_idx: int
@@ -332,18 +346,19 @@ class JobPostOrganizer:
         start_time = time.time()
 
         df_all_domains_list = [
-            self.google_sheet_manager.get_worksheet_as_dataframe(ws)
-            for ws in self.google_sheet_manager.sheet.worksheets()[1:]
+            self.gsheet_mgr.get_worksheet_as_dataframe(ws)
+            for ws in self.gsheet_mgr.sheet.worksheets()[1:]
         ]
 
         df_all_domains_list_updated = self.move_jobposts(df_all_domains_list)
         df_all_domains_list_updated = self.remove_duplicates(df_all_domains_list)
 
         for domain_idx, df_domain in enumerate(df_all_domains_list_updated):
-            ws = self.google_sheet_manager.sheet.worksheets()[domain_idx + 1]
-            self.google_sheet_manager.update_google_worksheet(ws, df_domain)
+            ws = self.gsheet_mgr.sheet.worksheets()[domain_idx + 1]
+            df_domain = self.remove_jobs_already_archived(df_domain, domain_idx)
+            self.gsheet_mgr.update_google_worksheet(ws, df_domain)
 
-        completion_time = start_time - time.time()
+        completion_time = time.time() - start_time
         log_small_separator(
             logger, f"Reorganizing done - completion time {completion_time}"
         )

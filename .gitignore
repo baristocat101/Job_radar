@@ -19,6 +19,6 @@ GoLogin/*
 logs/*
 *.pyc
 .venv/*
-scrape_jobposts_test.py
-scrape_jobposts_foreground.py
 screenshots/*
+archive/*
+Problems.txt
